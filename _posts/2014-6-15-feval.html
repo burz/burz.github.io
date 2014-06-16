@@ -54,7 +54,7 @@ title: Feval
 
     now we can represent <code>4 + 3 + 2</code> in our grammar as
 
-    <pre><code class="haskell">expr = Fx $ Add (Fx $ Add (Fx $ Int 4) (Fx $ Int 3)) (Fx $ Int 2)</code></pre>
+    <pre><code class="haskell">expr = Fx $ Add (Fx $ Add (Fx $ Num 4) (Fx $ Num 3)) (Fx $ Num 2)</code></pre>
 
     Great, but how does doing any of this help us? Well, now we can define a
     catamorphism that allows us to use an algebra
@@ -77,7 +77,7 @@ cata alg = alg . fmap (cata alg) . unFix</code></pre>
     grammar tree from the nodes up. An algebra is really just a rule for
     combining the evaluated children of a node:
 
-    <pre><code class="haskell">alg :: Algebra (Fix Addition) Int
+    <pre><code class="haskell">alg :: Algebra Addition Int
 alg (Num i) = i
 alg (Add x y) = x + y</code></pre>
 
@@ -98,7 +98,7 @@ alg (Add x y) = x + y</code></pre>
         </li>
     </ul>
 
-    More to come...
+    (I'm in the process of writting this, more to come...)
 
     <pre><code class="haskell"></code></pre>
 </article>
