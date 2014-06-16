@@ -5,9 +5,15 @@ title: Feval
 
 <br>
 
-<script>hljs.initHighlightingOnLoad();</script>
+<script>
+    $(document).ready(function() {
+        $('pre code').each(function(i, e) {
+            hljs.highlightBlock(e);
+        });
+    });
+</script>
 
-<article class="uk-article">
+<article class="uk-article" style="margin:0 auto; width:70%;">
     <h1 class="uk-article-title">
         Feval: F-algebras for expression evaluation
     </h1>
@@ -15,16 +21,85 @@ title: Feval
         Using f-algebras to produce a statically typed functional
         programming language
     </p>
+
+    <iframe
+        src="http://ghbtns.com/github-btn.html?user=burz&repo=feval&type=fork"
+        allowtransparency="true" frameborder="0"
+        scrolling="0" width="62" height="20"></iframe>
+
     <hr class="uk-article-divider">
 
-    hello there everybody
-    
-    <pre>
-        <code>
-    main = do
-        print "hello"
-        </code>
-    </pre>
+    A few months ago, I stumbled upon the article
+    <a href="https://www.fpcomplete.com/user/bartosz/understanding-algebras">
+        Understanding F-Algebras
+    </a>
+    by Bartosz Milewski. After reading the article I became interested in
+    trying to implement a functional programming language using f-algebras.
 
+    <h3>Basic Background</h3>
+
+    So what is an f-algebra? Well, at it's most basic level, an f-algebra is
+    something that reduces a structure with holes in it. For instance, you
+    can have a grammar that represents addition:
+
+    <pre><code class="haskell">data Addition a =
+      Num Int
+    | Add a a</code></pre>
+
+    then the type <code>a</code> is the hole. Since we can have addition
+    expressions like <code>4 + 3 + 2</code>, we need to this grammar to
+    be recursive. We can do this by defining a new type
+
+    <pre><code class="haskell">newtype Fix f = Fx (f (Fix f))</code></pre>
+
+    now we can represent <code>4 + 3 + 2</code> in our grammar as
+
+    <pre><code class="haskell">expr = Fx $ Add (Fx $ Add (Fx $ Int 4) (Fx $ Int 3)) (Fx $ Int 2)</code></pre>
+
+    Great, but how does doing any of this help us? Well, now we can define a
+    catamorphism that allows us to use an algebra
+
+    <pre><code class="haskell">type Algebra f a = f a -> a</code></pre>
+
+    to evaluate an expression in our grammar
+
+    <pre><code class="haskell">cata :: Functor f => Algebra f a -> Fix f -> a
+cata alg = alg . fmap (cata alg) . unFix</code></pre>
+
+    So in order for us to be able to use the catamorphism on our grammar,
+    it must be an instance of Functor:
+
+    <pre><code class="haskell">instance Functor Addition where
+    fmap f (Num i) = Num i
+    fmap f (Add x y) = Add (f x) (f y)</code></pre>
+
+    One important thing to note is that the catamorphism evaluates the
+    grammar tree from the nodes up. An algebra is really just a rule for
+    combining the evaluated children of a node:
+
+    <pre><code class="haskell">alg :: Algebra (Fix Addition) Int
+alg (Num i) = i
+alg (Add x y) = x + y</code></pre>
+
+    <h3>On to Eval</h3>
+
+    When thinking about how to create an evaluation scheme for a language
+    there are two important things to consider:
+
+    <ul class="uk-list">
+        <li>
+            1. What happens if the evaluation fails at some point in the expression?
+               (Consider the expression <code>4 + True</code>)
+        </li>
+        <li>
+            2. How can we delay evaluation until it is applicable?
+               (We cannot evaluate <code>Function x -> x + 8</code> until
+               we know the value applied to x)
+        </li>
+    </ul>
+
+    More to come...
+
+    <pre><code class="haskell"></code></pre>
 </article>
 
