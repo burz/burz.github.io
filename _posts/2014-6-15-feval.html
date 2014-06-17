@@ -15,7 +15,7 @@ title: Feval
 
 <article class="uk-article" style="margin:0 auto; width:70%;">
     <h1 class="uk-article-title">
-        Feval: F-algebras for expression evaluation
+        Feval: F-Algebras for expression evaluation
     </h1>
     <p class="uk-article-meta">
         Using f-algebras to produce a statically typed functional
@@ -36,13 +36,18 @@ title: Feval
     by Bartosz Milewski. After reading the article I became interested in
     trying to implement a functional programming language using f-algebras.
 
-    <h3>Basic Background</h3>
+    <br>
+    <br>
+
+    Be sure to check out the actual code via the Fork link above.
+
+    <h2>Basic Background</h2>
 
     So what is an f-algebra? Well, at it's most basic level, an f-algebra is
     something that reduces a structure with holes in it. For instance, you
     can have a grammar that represents addition:
 
-    <pre><code class="haskell">data Addition a =
+    <pre><code>data Addition a =
       Num Int
     | Add a a</code></pre>
 
@@ -50,26 +55,29 @@ title: Feval
     expressions like <code>4 + 3 + 2</code>, we need to this grammar to
     be recursive. We can do this by defining a new type
 
-    <pre><code class="haskell">newtype Fix f = Fx (f (Fix f))</code></pre>
+    <pre><code>newtype Fix f = Fx (f (Fix f))</code></pre>
 
     now we can represent <code>4 + 3 + 2</code> in our grammar as
 
-    <pre><code class="haskell">expr = Fx $ Add (Fx $ Add (Fx $ Num 4) (Fx $ Num 3)) (Fx $ Num 2)</code></pre>
+    <pre><code>expr = Fx $ Add (Fx $ Add (Fx $ Num 4) (Fx $ Num 3)) (Fx $ Num 2)</code></pre>
 
     Great, but how does doing any of this help us? Well, now we can define a
     catamorphism that allows us to use an algebra
 
-    <pre><code class="haskell">type Algebra f a = f a -> a</code></pre>
+    <pre><code>type Algebra f a = f a -> a</code></pre>
 
     to evaluate an expression in our grammar
 
-    <pre><code class="haskell">cata :: Functor f => Algebra f a -> Fix f -> a
+    <pre><code>unFix :: Fix f -> f (Fix f)
+unfix (Fx x) = x
+
+cata :: Functor f => Algebra f a -> Fix f -> a
 cata alg = alg . fmap (cata alg) . unFix</code></pre>
 
     So in order for us to be able to use the catamorphism on our grammar,
     it must be an instance of Functor:
 
-    <pre><code class="haskell">instance Functor Addition where
+    <pre><code>instance Functor Addition where
     fmap f (Num i) = Num i
     fmap f (Add x y) = Add (f x) (f y)</code></pre>
 
@@ -77,11 +85,11 @@ cata alg = alg . fmap (cata alg) . unFix</code></pre>
     grammar tree from the nodes up. An algebra is really just a rule for
     combining the evaluated children of a node:
 
-    <pre><code class="haskell">alg :: Algebra Addition Int
+    <pre><code>alg :: Algebra Addition Int
 alg (Num i) = i
 alg (Add x y) = x + y</code></pre>
 
-    <h3>On to Eval</h3>
+    <h2>Onto Eval</h2>
 
     When thinking about how to create an evaluation scheme for a language
     there are two important things to consider:
@@ -98,8 +106,154 @@ alg (Add x y) = x + y</code></pre>
         </li>
     </ul>
 
-    (I'm in the process of writting this, more to come...)
+    To deal with the first point we need to return <code>Maybe</code> a result
+    instead of just a result. In this case <code>Nothing</code> will mean that
+    some sort of type mismatch has occured (Note: this cannot happen once we have
+    our typechecker). But in order to do this we need to somehow add this to our
+    catamorphism. Fortunately, <code>Maybe</code> is a monad so all we need to
+    is redefine our catamorphism. First we add the type
 
-    <pre><code class="haskell"></code></pre>
+    <pre><code>type MAlgebra m f a = f (m a) -> m a</code></pre>
+
+    which threads monadic values through the algebra. Then we can simply define
+    our monadic catamorphism as
+
+    <pre><code>mcata :: Functor f => MAlgebra m f a -> Fix f -> m a
+mcata alg = alg . fmap (mcata alg) . unFix</code></pre>
+
+    This allows us to define an algebra for a larger grammar
+
+    <pre><code>data DumbAddition a =
+      Num Int
+    | Buul Bool
+    | Add a a
+
+instance Functor DumbAddition where
+    fmap f (Add x y) = Add (f x) (f y)
+    fmap f v = v</code></pre>
+
+    like so
+
+    <pre><code>alg :: MAlgebra Maybe DumbAddition Int
+alg (Num i) = Just i
+alg (Buul b) = Nothing
+alg (Add x y) = do
+    n <- x
+    m <- y
+    return $ n + m</code></pre>
+
+    Now onto the second point. In order to delay evaluation we once again have
+    to redefine our catamorphism. This time we use the grammar (you will need
+    <code>{-# LANGUAGE FlexibleInstances #-}</code>)
+
+    <pre><code>data Iffy a b =
+      Buul Bool
+    | And b b
+    | If b a a    -- If b Then a Else a
+
+instance Functor (Iffy (LazyFix Iffy)) where
+    fmap f (Buul b) = Buul b
+    fmap f (And x y) = And (f x) (f y)
+    fmap f (If p x y) = If (f p) x y</code></pre>
+
+    and define a new <code>Fix</code>
+
+    <pre><code>newtype LazyFix f = Fx' (f (LazyFix f) (LazyFix f))
+
+lazyUnFix :: LazyFix f -> f (LazyFix f) (LazyFix f)
+lazyUnFix (Fx' x) = x</code></pre>
+
+    for our new catamorphism
+
+    <pre><code>lazyCata :: Functor (f (LazyFix f)) => Algebra (f (LazyFix f)) a -> LazyFix f -> a
+lazyCata alg = alg . fmap (lazyCata alg) . lazyUnFix</code></pre>
+
+    Note that this lazyCata only propogates the evaluation through the type
+    <code>b</code> in the definition of <code>Iffy</code>, which is our hole.
+    Now we can define an algebra like so
+
+    <pre><code>alg :: Algebra (Iffy (LazyFix Iffy)) Bool
+alg (Buul b) = b
+alg (And x y) = x && y
+alg (If p x y) = if p then lazyCata alg x else lazyCata alg y</code></pre>
+
+    Note that our algebra only evaluates the side of the if expression that it needs to.
+    Putting both of these ideas together we define our overall catamorphism
+
+    <pre><code>lazyMCata :: Functor (f (LazyFix f)) => MAlgebra m (f (LazyFix f)) a -> LazyFix f -> m a
+lazyMCata alg = alg . fmap (lazyMCata alg) . lazyUnFix</code></pre>
+
+    <h2>Translation</h2>
+
+    Now that we have discussed evaluation, we will consider how to use f-algebras to
+    translate a more expressive language into a subset. Suppose we have implemented a
+    small language
+
+    <pre><code>data SmallLanguage a =
+      Num Int
+    | Buul Bool
+    | Not a
+    | And a a
+    | Or a a
+    | Equal a a
+    | LessThan a a
+    | Function String a
+    | Appl a a    -- Function application</code></pre>
+
+    we want to add more language features without having to rewrite our
+    evaluator. We can easily expand our language using f-algebras!
+
+<pre><code>data BiggerLanguage a =
+      BNum Int
+    | BBuul Bool
+    | BNot a
+    | BAnd a a
+    | BOr a a
+    | BEqual a a
+    | BLessThan a a
+    | BLessThanOrEqual a a
+    | BGreaterThan a a
+    | BGreaterThanOrEqual a a
+    | BFunction String a
+    | BAppl a a
+    | BLet String a a    -- Let s = a In a
+
+instance Functor BiggerLanguage where
+    fmap f (BNum i) = BNum i
+    fmap f (BBuul b) = BBuul b
+    fmap f (BNot b) = BNot (f b)
+    fmap f (BAnd x y) = BAnd (f x) (f y)
+    fmap f (BOr x y) = BOr (f x) (f y)
+    fmap f (BEqual x y) = BEqual (f x) (f y)
+    fmap f (BLessThan x y) = BLessThan (f x) (f y)
+    fmap f (BLessThanOrEqual x y) = BLessThanOrEqual (f x) (f y)
+    fmap f (BGreaterThan x y) = BGreaterThan (f x) (f y)
+    fmap f (BGreaterThanOrEqual x y) = BGreaterThanOrEqual (f x) (f y)
+    fmap f (BFunction s p) = BFunction s (f p)
+    fmap f (BAppl x y) = BAppl (f x) (f y)
+    fmap f (BLet s x y) = BLet s (f x) (f y)</code></pre>
+
+    Our translation algebra is simply
+
+    <pre><code>alg :: Algebra BiggerLanguage (Fix SmallLanguage)
+alg (BNum i) = Fx $ Num i
+alg (BBuul b) = Fx $ Buul b
+alg (BNot b) = Fx $ Not b
+alg (BAnd x y) = Fx $ And x y
+alg (BOr x y) = Fx $ Or x y
+alg (BEqual x y) = Fx $ Equal x y
+alg (BLessThan x y) = Fx $ LessThan x y
+alg (BLessThanOrEqual x y) = Fx $ Or (Fx $ LessThan x y) (Fx $ Equal x y)
+alg (BGreaterThan x y) = Fx . Not . Fx $ Or (Fx $ LessThan x y) (Fx $ Equal x y)
+alg (BGreaterThanOrEqual x y) = Fx . Not . Fx $ LessThan x y
+alg (BFunction s p) = Function s p
+alg (BAppl x y) = Appl x y
+alg (BLet s x y) = Fx $ Appl (Fx $ Function s y) x</code></pre>
+
+    <h2>Types Abound</h2>
+
+    (I'm still in the process of writting this; more to come...)
+
+    <pre><code></code></pre>
 </article>
 
