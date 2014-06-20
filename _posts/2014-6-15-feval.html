@@ -244,8 +244,209 @@ alg (BLet s x y) = Fx $ Appl (Fx $ Function s y) x</code></pre>
 
     <h2>Types Abound</h2>
 
-    (I'm still in the process of writting this; more to come...)
+    For Feval I used an equational type system. Essentially what this means is
+    that we run through the grammar of the language and for each instruction we
+    add an equation to a set which says what the type of the holes should be.
+    For instance suppose that we have have encountered <code>Add x y</code> then
+    we would add the equations <code>x = Int</code> and <code>y = Int</code> to
+    our set. So suppose we have the grammar
 
-    <pre><code></code></pre>
+    <pre><code>data AddOr a =
+      Num Int
+      Buul Bool
+    | Add a a
+    | Or a a
+
+instance Functor AddOr where
+    fmap f (Num n) = Num n
+    fmap f (Buul b) = Buul b
+    fmap f (Add x y) = Add (f x) (f y)
+    fmap f (Or x y) = Or (f x) (f y)</code></pre>
+
+    Then we can write an f-algebra that returns our set like so
+
+    <pre><code>import qualified Data.Set as Set
+
+data Type = TInt | TBool
+
+type Equation = (Type, Type)
+
+type Equations = Set.Set Equation
+
+-- Add both the equation and its reflection
+addEquation :: Equation -> Equations -> Equations
+addEquation (t, t') e = Set.insert (t, t') $ Set.insert (t', t) e
+
+doubleAdd :: Equation -> Equation -> Equations -> Equations -> Equations
+doubleAdd (t, t') (s, s') e e' = addEquation (t, t') $ addEquation (s, s') $ Set.union e e'
+
+type TypeAndEquations = (Type, Equations)
+
+alg :: Algebra AddOr TypeAndEquations
+alg (Num _) = (TInt, Set.empty)
+alg (Buul _) = (TBool, Set.empty)
+alg (Add (t, e) (t', e')) = (TInt, doubleAdd (t, TInt) (t', TInt) e e')
+alg (Or (t, e) (t', e')) = (TBool, doubleAdd (t, TBool) (t', TBool) e e')</code></pre>
+
+    This algebra returns a <code>TypeAndEquations</code>, which is a pair of the
+    type of the expression and a set of equations from within the expression.
+    Then, to make sure that the expression is correctly typed we need to first
+    find the closure of our set of equations, which means we need to add all
+    other equations that our equation implies. We can do this as follows:
+
+    <pre><code>-- The boolean value in this means that the equation was not already in the set
+addNew :: Equation -> Equations -> (Bool, Equations)
+addNew eq e = if Set.member eq e then (False, e) else (True, Set.insert eq e)
+
+-- The boolean value in this means that something new has been added
+addTransitives :: Equations -> (Bool, Equations)
+addTransitives e = Set.foldr process (False, e) e
+    where process (t, t') (b, e) = Set.foldr (addMatch t t') (False, e) e
+          addMatch t t' (s, s') (b, e) = if t' == s
+                then let (b', e') = addNew (t, s') e in (b || b', e')
+                else (b, e)
+
+close :: Equations -> Equations
+close e = let (b, e') = addTransitives e in
+    if b then close e' else e'</code></pre>
+
+    Now all we have to do is make sure that our set is inconsistent, but this is easy
+
+    <pre><code>inconsistent :: Equations -> Bool
+inconsistent e = Set.foldr check False e
+    where check (TInt, TBool) _ = True -- Recall that we have added all reflections
+          check _ b = b</code></pre>
+
+    Then our final typechecker is
+
+    <pre><code>typecheck :: Fix AddOr -> Maybe Type
+typecheck a = let (t, e) = cata alg a in
+    let e' = close e in
+    if inconsistent e' then Nothing else Just t</code></pre>
+
+    Great, but how could we typecheck a more complicated grammar with functions? In
+    this case we need to assign something called a type variable to the argument of
+    the function before typing the function's expression. For instance, to type
+    <code>Function x -> x + 5</code> we would assign the type variable
+    <code>TVar 0</code> to <code>x</code> and then typecheck <code>x + 5</code> which
+    would yield the equations <code>{TVar 0 = TInt, TInt = TInt}</code> with the
+    resulting type <code>TVar 0 -> TInt</code> and finally we would substitute for the
+    type variable using the equations and find the type of the expression to be
+    <code>TInt -> TInt</code>. Note that we have to delay the evaluation of the
+    <code>Function</code> until we have assigned <code>x</code> a type variable, and
+    this variable must be unique. To do this we will apply similar principles to the
+    ones we found while discussing evaluation. Consider the following grammar
+
+    <pre><code>data FunAdd a b =
+      Num Int
+    | Var String
+    | Add b b
+    | Function String a
+    | Appl b b -- Function application
+
+instance Functor (FunAdd (LazyFix FunAdd)) where
+    fmap f (Num n) = Num n
+    fmap f (Var s) = Var s
+    fmap f (Add x y) = Add (f x) (f y)
+    fmap f (Function x p) = Function x p
+    fmap f (Appl x y) = Appl (f x) (f y)</code></pre>
+
+    First we redefine <code>Type</code>
+
+    <pre><code>data Type =
+      TInt
+    | TVar Int -- Our type variable
+    | TArrow Type Type
+    | NotClosed
+    deriving Eq</code></pre>
+
+    The type <code>NotClosed</code> corresponds to the case that there is an expression
+    that is not closed like the expression <code>Function x -> y</code> (note that
+    <code>y</code> has no definition). Then we create a state monad that will produce our
+    handles
+
+    <pre><code>type Counter = State Int
+
+doNothing :: Counter Int
+doNothing = state (\i -> (i, i))
+
+newHandle :: Counter Int
+newHandle = state (\i -> (i, i + 1))</code></pre>
+
+    Then we redefine our typechecker as follows
+
+    <pre><code>-- The assignments of arguments to type variables
+type Hypotheses = [(String, Type)]
+
+lookupVar :: String -> Hypotheses -> Maybe Type
+lookupVar v h = foldr check Nothing h
+    where check (s, t) Nothing = if s == v then Just t else Nothing
+          check _ r = r
+
+alg :: Hypotheses -> MAlgebra Counter (FunAdd (LazyFix FunAdd)) TypeAndEquations
+alg _ (Num _) = (\_ -> (TInt, Set.empty)) <$> doNothing
+alg h (Var s) = (\_ -> let r = lookupVar s h in case r of
+    Nothing -> (NotClosed, Set.insert (FNotClosed, FNotClosed) Set.empty)
+    Just t -> (t, Set.empty)) <$> doNothing
+alg _ (Add x y)
+    = (\(t, e) (t', e') -> (TInt, doubleAdd (t, TInt) (t', TInt) e e')) <$> x <*> y
+alg h (Function x p) = newHandle >>= \n -> let v = TVar n in
+    typecheck' ((x, v) : h) p >>= \(t, e) -> return (TArrow v t, e)
+alg _ (Appl x y) = (\n (t, e) (t', e') -> let v = TVar n in
+    (h, addEquation (t, TArrow t' v) (Set.union e e'))) <$> newHandle <*> x <*> y
+
+typecheck' :: Hypotheses -> LazyFix FunAdd -> Counter TypeAndEquations
+typecheck' g = lazyMCata . alg g
+
+typecheck :: LazyFix FunAdd -> Maybe Type
+typecheck e = let (t, e') = evalState (typecheck' [] e) 0
+    in let e'' = close e'
+    in if inconsistent e'' then Nothing else Just (substitute t e'')</code></pre>
+
+    where we have defined
+
+    <pre><code>doubleAddNew :: Equation -> Equation -> Equations -> (Bool, Equations)
+doubleAddNew eq eq' e = let (b, e') = addNew eq e in
+    let (b', e'') = addNew eq' e' in (b || b', e'')
+
+addArrows :: Equations -> (Bool, Equations)
+addArrows e = Set.foldr process (False, e) e
+    where process (TArrow t t', TArrow s s') (b, e) =
+        let (b', e') = doubleAddNew (t, s) (t', s') e in (b || b', e')
+
+close' :: Equations -> (Bool, Equations)
+close' e = let (b, e') = addTransitives e in
+    let (b', e'') = addArrows e' in (b || b', e'')
+
+close :: Equations -> Equations
+close e = let (b, e') = close' e in
+    if b then close' e' else e'
+
+inconsistent :: Equations -> Bool
+inconsistent e = Set.foldr check False e
+    where check (TInt, TBool) _ = True
+          check (TInt, TArrow _ _) _ = True
+          check (NotClosed, _) _ = True
+          check _ b = b</code></pre>
+
+    and a substitution function for the resulting type of the expression
+
+    <pre><code>-- This function chooses the best possible substitution
+choose :: Int -> Equations -> Equation -> Type -> Type
+choose _ _ _ TInt = TInt
+choose n e (TVar n', y) (TVar n'') = if n /= n' then TVar n'' else case y of
+    TInt -> TInt
+    TArrow x y -> TArrow (substitute x e) (substitute y e)
+    TVar -> if n' < n
+        then if n'' < n' then TVar n'' else TVar n'
+        else if n'' < n then TVar n'' else TVar n
+choose _ _ _ r = r
+
+substitute :: Type -> Equations -> Type
+substitute TInt _ = TInt
+substitute (TVar n) e = Set.fold (choose n e) (TVar n) e
+substitute (FArrow x y) e = TArrow (substitute x e) (substitute y e)</code></pre>
+
+    (I'm still in the process of writting this; more to come...)
 </article>
 
