@@ -66,7 +66,7 @@ cata alg = alg . fmap (cata alg) . unFix</code></pre>
 
     So in order for us to be able to use the catamorphism, our grammar must be
     an instance of Functor, which essentially means that the type of the grammar
-    is an object with a hole that we can run funtions on
+    is an object with a hole that we can run functions on
 
     <pre><code>instance Functor Addition where
     fmap f (Num i) = Num i
@@ -106,7 +106,7 @@ eval = cata . alg</code></pre>
 
     To deal with the first point we need to return <code>Maybe</code> a result
     instead of just a result. In this case <code>Nothing</code> will mean that
-    some sort of type mismatch has occured (Note: this cannot happen once we have
+    some sort of type mismatch has occurred (Note: this cannot happen once we have
     our typechecker). But in order to utilize <code>Maybe</code> we need to
     somehow incorporate this into our catamorphism. Fortunately, <code>Maybe</code>
     is a monad so all we need to is redefine our catamorphism. First we introduce
@@ -171,7 +171,7 @@ lazyUnFix (Fx' x) = x</code></pre>
     <pre><code>lazyCata :: Functor (f (LazyFix f)) => Algebra (f (LazyFix f)) a -> LazyFix f -> a
 lazyCata alg = alg . fmap (lazyCata alg) . lazyUnFix</code></pre>
 
-    Now that this lazyCata only propogates the evaluation through the type
+    Now that this lazyCata only propagates the evaluation through the type
     <code>b</code> in the definition of <code>Iffy</code>, we can define an algebra
     as follows
 
@@ -222,7 +222,7 @@ substitute _ _ (Fx' (Buul b)) = Fx' $ Buul b
 substitute s v (Fx' (Var s')) = if s' == s then v else Fx' $ Var s'
 substitute s v (Fx' (And x y)) = Fx' $ And (substitute s v x) (substitute s v y)
 substitute s v (Fx' (Or x y)) = Fx' $ Or (substitute s v x) (substitute s v y)
-substitite s v (Fx' (Function x p)) = if x == s
+substitute s v (Fx' (Function x p)) = if x == s
     then Fx' $ Function x p
     else Fx' $ Function x $ substitute s v p
 substitute s v (Fx' (Appl x y)) = Fx' $ Appl (substitute s v x) (substitute s v y)
