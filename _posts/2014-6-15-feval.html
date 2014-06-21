@@ -31,7 +31,8 @@ title: Feval
     <br>
     <br>
 
-    Be sure to check out the actual code via the Fork link above.
+    Be sure to check out the actual code of the language Feval via the Fork
+    link above.
 
     <h2>Basic Background</h2>
 
@@ -175,6 +176,56 @@ alg (If p x y) = if p then lazyCata alg x else lazyCata alg y</code></pre>
     <pre><code>lazyMCata :: Functor (f (LazyFix f)) => MAlgebra m (f (LazyFix f)) a -> LazyFix f -> m a
 lazyMCata alg = alg . fmap (lazyMCata alg) . lazyUnFix</code></pre>
 
+    Putting this all together, consider the grammar
+
+    <pre><code>data FunBool a b =
+      Buul Bool
+    | Var String
+    | And b b
+    | Or b b
+    | Function String a
+    | Appl b a -- Function application
+
+instance Functor (FunBool (LazyFix FunBool)) where
+    fmap f (Buul b) = Buul b
+    fmap f (Var s) = Var s
+    fmap f (And x y) = And (f x) (f y)
+    fmap f (Or x y) = Or (f x) (f y)
+    fmap f (Function x p) = Function x p
+    fmap f (Appl x y) = Appl (f x) y</code></pre>
+
+    We can evaluate this using the following
+
+    <pre><code>data RVal = RBool Bool | RFunction String (LazyFix FunBool)
+
+substitute :: String -> LazyFix FunBool -> LazyFix FunBool -> LazyFix FunBool
+substitute _ _ (Fx' (Buul b)) = Fx' $ Buul b
+substitute s v (Fx' (Var s')) = if s' == s then v else Fx' $ Var s'
+substitute s v (Fx' (And x y)) = Fx' $ And (substitute s v x) (substitute s v y)
+substitute s v (Fx' (Or x y)) = Fx' $ Or (substitute s v x) (substitute s v y)
+substitite s v (Fx' (Function x p)) = if x == s
+    then Fx' $ Function x p
+    else Fx' $ Function x $ substitute s v p
+substitute s v (Fx' (Appl x y)) = Fx' $ Appl (substitute s v x) (substitute s v y)
+
+boolean_operation :: (Bool -> Bool -> Bool) -> RVal -> RVal -> Maybe RVal
+boolean_operation f (RBool x) (RBool y) = Just . RBool $ f x y
+
+apply :: RVal -> LazyFix FunBool -> Maybe RVal
+apply (RFunction x p) e = eval e >>= \v -> eval $ substitute x v p
+apply _ _ = Nothing
+
+alg :: MAlgebra Maybe (FunBool (LazyFix FunBool)) Maybe RVal
+alg (Buul b) = Just $ RBool b
+alg (Var s) = Nothing
+alg (And x y) = x >>= \x' -> y >>= \y' -> boolean_operation (&&) x' y'
+alg (Or x y) = x >>= \x' -> y >>= \y' -> boolean_operation (||) x' y'
+alg (Function x p) = Just $ RFunction x p
+alg (Appl f x) = f >>= \f' -> apply f' x
+
+eval :: LazyFix FunBool -> Maybe RVal
+eval = lazyMCata . alg</code></pre>
+
     <h2>Translation</h2>
 
     Now that we have discussed evaluation, we will consider how to use f-algebras to
@@ -190,7 +241,7 @@ lazyMCata alg = alg . fmap (lazyMCata alg) . lazyUnFix</code></pre>
     | Equal a a
     | LessThan a a
     | Function String a
-    | Appl a a    -- Function application</code></pre>
+    | Appl a a</code></pre>
 
     we want to add more language features without having to rewrite our
     evaluator. We can easily expand our language using f-algebras!
@@ -447,6 +498,36 @@ substitute TInt _ = TInt
 substitute (TVar n) e = Set.fold (choose n e) (TVar n) e
 substitute (FArrow x y) e = TArrow (substitute x e) (substitute y e)</code></pre>
 
-    (I'm still in the process of writting this; more to come...)
+    <h2>Afterword</h2>
+
+    Hopefully this has given you a good idea of how useful f-algebras can be in
+    the realm of programming languages. Using these principles I have constructed
+    a language that I call
+    <a href="https://github.com/burz/Feval">Feval</a>,
+    which includes such features as lists and recursive let definitions like
+    <code>Let f x = If f = 0 Then 0 Else x + f (x - 1)</code>. With these constructs
+    we can evaluate things like a mergesort expression
+
+    <pre><code>Let compare x y = If x > y Then -1 Else If x = y Then 0 Else 1 In
+Let combine x y = Case x Of
+      []       -> y
+    | (z : zs) -> Case y Of
+          []       -> x
+        | (w : ws) -> Let r = compare z w In If r <= 0
+            Then w : z : combine zs ws
+            Else z : w : combine zs ws In
+Let mergesort x = Let mergesort' x l r = Case x Of
+      []       -> combine (mergesort l) (mergesort r)
+    | (z : zs) -> Case zs Of
+          []       -> x
+        | (w : ws) -> mergesort' ws (z : l) (w : r)
+In mergesort' x [] []
+In mergesort [4, 23, -34, 3]</code></pre>
+
+    Check it out for more complicated examples of f-algebras and evaluation.
+
+    <br>
+    <br>
+
 </article>
 
