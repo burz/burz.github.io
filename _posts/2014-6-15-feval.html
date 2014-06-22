@@ -59,7 +59,7 @@ title: Feval
     to evaluate an expression in our grammar
 
     <pre><code>unFix :: Fix f -> f (Fix f)
-unfix (Fx x) = x
+unFix (Fx x) = x
 
 cata :: Functor f => Algebra f a -> Fix f -> a
 cata alg = alg . fmap (cata alg) . unFix</code></pre>
@@ -85,7 +85,7 @@ alg (Add x y) = x + y</code></pre>
     and our evaluation function is
 
     <pre><code>eval :: Fix Addition -> Int
-eval = cata . alg</code></pre>
+eval e = cata alg e</code></pre>
 
     <h2>Onto Eval</h2>
 
@@ -128,8 +128,9 @@ mcata alg = alg . fmap (mcata alg) . unFix</code></pre>
     | Add a a
 
 instance Functor DumbAddition where
-    fmap f (Add x y) = Add (f x) (f y)
-    fmap f v = v</code></pre>
+    fmap f (Num i) = Num i
+    fmap f (Buul b) = Buul b
+    fmap f (Add x y) = Add (f x) (f y)</code></pre>
 
     like so
 
@@ -139,7 +140,10 @@ alg (Buul b) = Nothing
 alg (Add x y) = do
     n <- x
     m <- y
-    return $ n + m</code></pre>
+    return $ n + m
+
+eval :: Fix DumbAddition -> Maybe Int
+eval e = mcata alg e</code></pre>
 
     Now onto the second point. In order to delay evaluation we once again have
     to redefine our catamorphism. This time we use the grammar (you will need
@@ -181,7 +185,7 @@ alg (And x y) = x && y
 alg (If p x y) = if p then eval x else eval y
 
 eval :: LazyFix Iffy -> Bool
-eval = lazyCata . alg</code></pre>
+eval e = lazyCata alg e</code></pre>
 
     Note that our algebra only evaluates the side of the if expression that it needs to.
 
@@ -230,11 +234,15 @@ substitute s v (Fx' (Appl x y)) = Fx' $ Appl (substitute s v x) (substitute s v 
 boolean_operation :: (Bool -> Bool -> Bool) -> RVal -> RVal -> Maybe RVal
 boolean_operation f (RBool x) (RBool y) = Just . RBool $ f x y
 
+convert :: RVal -> LazyFix FunBool
+convert (RBool b) = Fx' $ Buul b
+convert (RFunction x p) = Fx' $ Function x p
+
 apply :: RVal -> LazyFix FunBool -> Maybe RVal
-apply (RFunction x p) e = eval e >>= \v -> eval $ substitute x v p
+apply (RFunction x p) e = eval e >>= \v -> eval $ substitute x (convert v) p
 apply _ _ = Nothing
 
-alg :: MAlgebra Maybe (FunBool (LazyFix FunBool)) Maybe RVal
+alg :: MAlgebra Maybe (FunBool (LazyFix FunBool)) RVal
 alg (Buul b) = Just $ RBool b
 alg (Var s) = Nothing
 alg (And x y) = x >>= \x' -> y >>= \y' -> boolean_operation (&&) x' y'
@@ -243,7 +251,7 @@ alg (Function x p) = Just $ RFunction x p
 alg (Appl f x) = f >>= \f' -> apply f' x
 
 eval :: LazyFix FunBool -> Maybe RVal
-eval = lazyMCata . alg</code></pre>
+eval e = lazyMCata alg e</code></pre>
 
     <h2>Translation</h2>
 
@@ -309,14 +317,14 @@ alg (BLessThan x y) = Fx $ LessThan x y
 alg (BLessThanOrEqual x y) = Fx $ Or (Fx $ LessThan x y) (Fx $ Equal x y)
 alg (BGreaterThan x y) = Fx . Not . Fx $ Or (Fx $ LessThan x y) (Fx $ Equal x y)
 alg (BGreaterThanOrEqual x y) = Fx . Not . Fx $ LessThan x y
-alg (BFunction s p) = Function s p
-alg (BAppl x y) = Appl x y
+alg (BFunction s p) = Fx $ Function s p
+alg (BAppl x y) = Fx $ Appl x y
 alg (BLet s x y) = Fx $ Appl (Fx $ Function s y) x</code></pre>
 
     with our translator defined as
 
     <pre><code>translate :: Fix BiggerLanguage -> Fix SmallLanguage
-translate = cata . alg</code></pre>
+translate e = cata alg e</code></pre>
 
     <h2>Types Abound</h2>
 
@@ -330,7 +338,7 @@ translate = cata . alg</code></pre>
 
     <pre><code>data AddOr a =
       Num Int
-      Buul Bool
+    | Buul Bool
     | Add a a
     | Or a a
 
@@ -344,7 +352,7 @@ instance Functor AddOr where
 
     <pre><code>import qualified Data.Set as Set
 
-data Type = TInt | TBool
+data Type = TInt | TBool deriving (Eq, Ord)
 
 type Equation = (Type, Type)
 
@@ -439,14 +447,16 @@ instance Functor (FunAdd (LazyFix FunAdd)) where
     | TVar Int -- Our type variable
     | TArrow Type Type
     | NotClosed
-    deriving Eq</code></pre>
+    deriving (Eq, Ord)</code></pre>
 
     The type <code>NotClosed</code> corresponds to the case that there is an expression
     that is not closed like the expression <code>Function x -> y</code> (note that
     <code>y</code> has no definition). Then we create a state monad that will produce
     unique integers for our type variables
 
-    <pre><code>type Counter = State Int
+    <pre><code>import Control.Monad.State
+
+type Counter = State Int
 
 doNothing :: Counter Int
 doNothing = state (\i -> (i, i))
@@ -456,7 +466,9 @@ newHandle = state (\i -> (i, i + 1))</code></pre>
 
     Then we redefine our typechecker as follows
 
-    <pre><code>-- The assignments of arguments to type variables
+    <pre><code>import Control.Applicative
+
+-- The assignments of arguments to type variables
 type Hypotheses = [(String, Type)]
 
 lookupVar :: String -> Hypotheses -> Maybe Type
@@ -467,17 +479,17 @@ lookupVar v h = foldr check Nothing h
 alg :: Hypotheses -> MAlgebra Counter (FunAdd (LazyFix FunAdd)) TypeAndEquations
 alg _ (Num _) = (\_ -> (TInt, Set.empty)) <$> doNothing
 alg h (Var s) = (\_ -> let r = lookupVar s h in case r of
-    Nothing -> (NotClosed, Set.insert (FNotClosed, FNotClosed) Set.empty)
+    Nothing -> (NotClosed, Set.insert (NotClosed, NotClosed) Set.empty)
     Just t -> (t, Set.empty)) <$> doNothing
 alg _ (Add x y)
     = (\(t, e) (t', e') -> (TInt, doubleAdd (t, TInt) (t', TInt) e e')) <$> x <*> y
 alg h (Function x p) = newHandle >>= \n -> let v = TVar n in
     typecheck' ((x, v) : h) p >>= \(t, e) -> return (TArrow v t, e)
 alg _ (Appl x y) = (\n (t, e) (t', e') -> let v = TVar n in
-    (h, addEquation (t, TArrow t' v) (Set.union e e'))) <$> newHandle <*> x <*> y
+    (v, addEquation (t, TArrow t' v) (Set.union e e'))) <$> newHandle <*> x <*> y
 
 typecheck' :: Hypotheses -> LazyFix FunAdd -> Counter TypeAndEquations
-typecheck' g = lazyMCata . alg g
+typecheck' g e = lazyMCata (alg g) e
 
 typecheck :: LazyFix FunAdd -> Maybe Type
 typecheck e = let (t, e') = evalState (typecheck' [] e) 0
@@ -501,12 +513,11 @@ close' e = let (b, e') = addTransitives e in
 
 close :: Equations -> Equations
 close e = let (b, e') = close' e in
-    if b then close' e' else e'
+    if b then close e' else e'
 
 inconsistent :: Equations -> Bool
 inconsistent e = Set.foldr check False e
-    where check (TInt, TBool) _ = True
-          check (TInt, TArrow _ _) _ = True
+    where check (TInt, TArrow _ _) _ = True
           check (NotClosed, _) _ = True
           check _ b = b</code></pre>
 
@@ -518,7 +529,7 @@ choose _ _ _ TInt = TInt
 choose n e (TVar n', y) (TVar n'') = if n /= n' then TVar n'' else case y of
     TInt -> TInt
     TArrow x y -> TArrow (substitute x e) (substitute y e)
-    TVar -> if n' < n
+    TVar n' -> if n' < n
         then if n'' < n' then TVar n'' else TVar n'
         else if n'' < n then TVar n'' else TVar n
 choose _ _ _ r = r
@@ -526,7 +537,7 @@ choose _ _ _ r = r
 substitute :: Type -> Equations -> Type
 substitute TInt _ = TInt
 substitute (TVar n) e = Set.fold (choose n e) (TVar n) e
-substitute (FArrow x y) e = TArrow (substitute x e) (substitute y e)</code></pre>
+substitute (TArrow x y) e = TArrow (substitute x e) (substitute y e)</code></pre>
 
     <h2>Afterword</h2>
 
