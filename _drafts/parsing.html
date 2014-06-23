@@ -15,6 +15,36 @@ title: Parsing a functional language with Parsec
 
     <hr class="uk-article-divider">
 
+    In the following we will discuss how to parse the grammar
+
+    <pre><code>x ::= ( a | b | ... | z )
+      ( a | b | ... | z
+      | A | B | ... | Z
+      | 0 | 1 | ... | 9
+      | _ | ' )*
+
+v ::=   x
+      | True | False
+      | 0 | 1 | -1 | 2 | -2 | ...
+      | Function x -> e
+      | [] | [v, v, ..., v]
+
+e ::=   v
+      | (e)
+      | e && e | e "||" e | !e
+      | e + e | e - e | e * e | e / e | e % e
+      | e = e | e < e | e <= e | e > e | e >= e
+      | e e     -- Function application
+      | If e Then e Else e
+      | Let x x ... x = e In e
+      | e; e
+      | e : e | Case e Of [] -> e "|" (x : x) -> e</code></pre>
+
+    used for the programming language
+    <a href="https://github.com/burz/Feval">Feval</a> by utilizing the Parsec
+    library for Haskell. We will find that such a daunting task as parsing is
+    made relatively simple with parser combinators.
+
     <br>
     <br>
 
