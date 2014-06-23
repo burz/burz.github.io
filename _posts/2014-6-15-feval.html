@@ -120,17 +120,15 @@ eval e = cata alg e</code></pre>
     <pre><code>mcata :: Functor f => MAlgebra m f a -> Fix f -> m a
 mcata alg = alg . fmap (mcata alg) . unFix</code></pre>
 
-    These definitions allow us to define an algebra for a larger grammar
+    These definitions allow us to define an algebra for a larger grammar (we are now
+    deriving the functor instance, you will need to include
+    <code>{-# LANGUAGE DeriveFunctor #-}</code> at the top of your file)
 
     <pre><code>data DumbAddition a =
       Num Int
     | Buul Bool
     | Add a a
-
-instance Functor DumbAddition where
-    fmap f (Num i) = Num i
-    fmap f (Buul b) = Buul b
-    fmap f (Add x y) = Add (f x) (f y)</code></pre>
+    deriving Functor</code></pre>
 
     like so
 
@@ -153,11 +151,7 @@ eval e = mcata alg e</code></pre>
       Buul Bool
     | And b b
     | If b a a    -- If b Then a Else a
-
-instance Functor (Iffy (LazyFix Iffy)) where
-    fmap f (Buul b) = Buul b
-    fmap f (And x y) = And (f x) (f y)
-    fmap f (If p x y) = If (f p) x y</code></pre>
+    deriving Functor</code></pre>
 
     In this case we want to delay the evaluation of either side of the if expression
     until we know which we actually have to return. For this new style of grammar we
@@ -207,14 +201,7 @@ lazyMCata alg = alg . fmap (lazyMCata alg) . lazyUnFix</code></pre>
     | Or b b
     | Function String a
     | Appl b a -- Function application
-
-instance Functor (FunBool (LazyFix FunBool)) where
-    fmap f (Buul b) = Buul b
-    fmap f (Var s) = Var s
-    fmap f (And x y) = And (f x) (f y)
-    fmap f (Or x y) = Or (f x) (f y)
-    fmap f (Function x p) = Function x p
-    fmap f (Appl x y) = Appl (f x) y</code></pre>
+    deriving Functor</code></pre>
 
     We can evaluate this using the following
 
@@ -288,21 +275,7 @@ eval e = lazyMCata alg e</code></pre>
     | BFunction String a
     | BAppl a a
     | BLet String a a    -- Let s = a In a
-
-instance Functor BiggerLanguage where
-    fmap f (BNum i) = BNum i
-    fmap f (BBuul b) = BBuul b
-    fmap f (BNot b) = BNot (f b)
-    fmap f (BAnd x y) = BAnd (f x) (f y)
-    fmap f (BOr x y) = BOr (f x) (f y)
-    fmap f (BEqual x y) = BEqual (f x) (f y)
-    fmap f (BLessThan x y) = BLessThan (f x) (f y)
-    fmap f (BLessThanOrEqual x y) = BLessThanOrEqual (f x) (f y)
-    fmap f (BGreaterThan x y) = BGreaterThan (f x) (f y)
-    fmap f (BGreaterThanOrEqual x y) = BGreaterThanOrEqual (f x) (f y)
-    fmap f (BFunction s p) = BFunction s (f p)
-    fmap f (BAppl x y) = BAppl (f x) (f y)
-    fmap f (BLet s x y) = BLet s (f x) (f y)</code></pre>
+    deriving Functor</code></pre>
 
     Our translation algebra is simply
 
@@ -341,12 +314,7 @@ translate e = cata alg e</code></pre>
     | Buul Bool
     | Add a a
     | Or a a
-
-instance Functor AddOr where
-    fmap f (Num n) = Num n
-    fmap f (Buul b) = Buul b
-    fmap f (Add x y) = Add (f x) (f y)
-    fmap f (Or x y) = Or (f x) (f y)</code></pre>
+    deriving Functor</code></pre>
 
     Then we can write an f-algebra that returns our set like so
 
@@ -432,13 +400,7 @@ typecheck a = let (t, e) = cata alg a in
     | Add b b
     | Function String a
     | Appl b b
-
-instance Functor (FunAdd (LazyFix FunAdd)) where
-    fmap f (Num n) = Num n
-    fmap f (Var s) = Var s
-    fmap f (Add x y) = Add (f x) (f y)
-    fmap f (Function x p) = Function x p
-    fmap f (Appl x y) = Appl (f x) (f y)</code></pre>
+    deriving Functor</code></pre>
 
     First we redefine <code>Type</code>
 
@@ -505,7 +467,7 @@ doubleAddNew eq eq' e = let (b, e') = addNew eq e in
 addArrows :: Equations -> (Bool, Equations)
 addArrows e = Set.foldr process (False, e) e
     where process (TArrow t t', TArrow s s') (b, e) =
-        let (b', e') = doubleAddNew (t, s) (t', s') e in (b || b', e')
+            let (b', e') = doubleAddNew (t, s) (t', s') e in (b || b', e')
 
 close' :: Equations -> (Bool, Equations)
 close' e = let (b, e') = addTransitives e in
@@ -573,10 +535,8 @@ In mergesort [4, 23, -34, 3]</code></pre>
 
     <div id="disqus_thread"></div>
     <script type="text/javascript">
-        /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
-        var disqus_shortname = 'burz'; // required: replace example with your forum shortname
+        var disqus_shortname = 'burz';
 
-        /* * * DON'T EDIT BELOW THIS LINE * * */
         (function() {
             var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
             dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
