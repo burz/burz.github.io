@@ -318,14 +318,29 @@ opExpr = buildExpressionParser opTable term</code></pre>
 
     <h2>Terms of Service</h2>
 
+    First we define parsers for our basic constant types
+
+    <pre><code>import Control.Applicative ( (<$>) -- This takes an argument on its right,
+                                   -- in this case the value inside the
+                                   -- monadic parser, and applies it to the function to
+                                   -- the left (if the parser does not fail)
+                           , (<$)) -- This takes an monadic parser on its right
+                                   -- and returns the value on the left (if the
+                                   -- parser does not fail)
+
+cint :: Parser Expr
+cint = CInt <$> integer
+
+cbool :: Parser Expr
+cbool = CBool True <$ reserved "True"
+    <|> CBool False <$ reserved "False"
+
+cvar :: Parser Expr
+cvar = CVar <$> identifier</code></pre>
+
     Next we define our list parser
 
-    <pre><code>import Control.Applicative ((<$>)) -- This takes an argument on its right
-                                   -- in this case the value inside the
-                                   -- monadic parser and applies it to the function to
-                                   -- the left (if the parser does not fail)
-
-list :: Parser Expr
+    <pre><code>list :: Parser Expr
 list = toCons <$> brackets (commaSep expr)
     where toCons [] = Empty
           toCons (x:xs) = Cons x (toCons xs)</code></pre>
