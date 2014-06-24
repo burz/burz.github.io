@@ -1,0 +1,11 @@
+strict digraph X {
+x0 [label="-",shape=circle]
+x1 [label="+",shape=circle]
+x2 [label="1",shape=circle]
+x3 [label="2",shape=circle]
+x4 [label="3",shape=circle]
+x0 -> x2
+x0 -> x1
+x1 -> x3
+x1 -> x4
+}

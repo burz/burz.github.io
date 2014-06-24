@@ -45,6 +45,159 @@ e ::=   v
     library for Haskell. We will find that such a daunting task as parsing is
     made relatively simple with parser combinators.
 
+    <h2>Basic Background</h2>
+
+    Parsing is primarily concerned with deriving meaning from strings, i.e. sequences
+    of characters. In the domain of programming languages, this means that we want to
+    read in a string (usually read from a file) that contains a program. For instance
+    if we have the code <code>1 - 2 + 3</code> we would want to be able to convert it
+    to its abstract syntax tree or AST which looks like
+
+    <center><img src="/images/ast_parser.jpg"></img></center>
+
+    The AST tells the program how to execute the code, which it does in a post-order
+    traversal, i.e. it evaluates the right and left children before the parent. The
+    way that we represent the AST in Haskell is by defining a grammar for our
+    language and then an acutal type. For the expression above we could define
+    the grammar for our language to be
+
+    <pre><code>v ::= 1 | -1 | 2 | -2 | 3 | -3 | ...
+
+e ::= e + e | e - e | v</code></pre>
+
+    In this case our values denoted by the variable <code>v</code> can be any
+    integer, whereas our expressions denoted by the variable <code>e</code> are
+    only addition of any two expressions, subtraction of any two expressions, or
+    any value. We can represent this grammar as a type as follows
+
+    <pre><code>data Expr =
+       Add Expr Expr
+     | Sub Expr Expr
+     | Num Int</code></pre>
+
+    Usually when you have to do something with parsing you have a whole lot of
+    baggage that comes along with it. Things like whitespace, the state of the
+    parser (what line you are on, etc.), or even what to do when there is a syntax
+    error on the part of the programmer, can be a lot to handle and annoying to
+    have to deal with. Fortunately
+    <a href"https://hackage.haskell.org/package/parsec">Parsec</a>
+    makes all this easy.
+
+    <h2>Parse on, Captian</h2>
+
+    First off, to deal with whitespace all we need to do is create a lexer, which
+    takes our program and returns tokens, things like "45", "-12", "+", or "-" while
+    removing whitespace. First we define the configuration for our lexer
+
+    <pre><code>import Text.Parsec
+import qualified Text.Parsec.Token as Token
+import Text.Parsec.Language
+
+lexerConfig = { Token.reservedOpNames = words "+ -" }</code></pre>
+
+    This lexer config says that the symbols "+" and "-" are reserved operators.
+    Now we create our lexer and extract some useful functions from it
+
+    <pre><code>lexer = Token.makeTokenParser emptyDef lexerConfig
+
+reservedOp = Token.reservedOp lexer
+integer    = Token.integer lexer</code></pre>
+
+    Now we can get down to the gritty details. The Parsec parser is a monad that
+    abstracts everything but the results of succesful parsing away from us so
+    that we don't have to deal with it. Because of the monad structure, we are
+    easily able to combine smaller parsers together to form a larger parser. In
+    this way we will find that our parser resembles its original grammar.
+
+    <br>
+    <br>
+
+    Lets first start our with our parser for a value. The only type of value we
+    can have is an integer so therefore, our parser can be written
+
+    <pre><code>value :: Parser Expr
+value = do
+    n <- integer
+    return $ Num n</code></pre>
+
+    The <code>integer</code> parser returns an integer monadically, which we extract
+    to form a value <code>Expr</code>, namely an instance of <code>Num Int</code>. In
+    the case that the <code>integer</code> fails, i.e. cannot parse an input, the
+    value parser will fail without consuming any input.
+
+    <br>
+    <br>
+
+    (It is important to note that this would not be the case if the <code>value</code>
+    parser were made to consume something else before the integer, like
+    <code>Integer</code> before an expression like <code>Integer -78</code>. In this
+    case after consuming a string containing "Integer", if the <code>integer</code>
+    parser were to fail, the "Integer" would still be consumed by the value parser
+    even if it fails. If you need to fail without consuming input in this type of
+    scenario you should wrap your parser inside of Parsec's <code>try</code>
+    function.)
+
+    <br>
+    <br>
+
+    Now we need to parse expressions, specifically our expressions involving the
+    operators <code>+</code> and <code>-</code>. In most cases this type of parsing
+    is hard and annoying, if not downright impossible, but fortunately Parsec comes
+    to the rescue once again! First we define a function which will construct a
+    configuration that tells Parsec's expression library how to parse our expression
+
+    <pre><code>import Text.Parsec.Expr
+
+binary name label assoc = Infix (do{ reservedOp name
+                                   ; return (\x y -> label x y)
+                                   }) assoc</code></pre>
+
+    This tells the expression parser that we are creating an infix operator with
+    an associativity <code>assoc</code> and a parser for the operator, which
+    must return a function to construct the expression parsers return type.
+    In this case the parser parses one of our reserved operators <code>name</code>
+    and returns the <code>label</code> type with the left and right parts of
+    the expression applied to <code>x</code> and <code>y</code>. We can then
+    define an operator table
+
+    <pre><code>opTable = [ [ binary "+" Add AssocLeft
+            , binary "-" Sub AssocLeft ] ]</code></pre>
+
+    which says that both addition and subtraction are binary operations that
+    associate left with names <code>+</code> and <code>-</code>, and types
+    <code>Add</code> and <code>Sub</code>, respectively. Then our expression
+    parser is
+
+    <pre><code>expr :: Parser Expr
+expr = buildExpressionParser opTable expr</code></pre>
+
+    which says that the parser for the right and left of an expression is either a
+    <code>value</code> or another expression from the <code>opTable</code>.
+
+    <br>
+    <br>
+
+    Great, but how do I use it? You can easily parse both strings and files via
+
+    <pre><code>import Control.Applicative ((<*))
+
+parseString :: String -> Either ParseError Expr
+parseString s = parse (expr <* eof) "" s
+
+parseFile :: FilePath -> IO (Either ParseError Expr)
+parseFile f = parseFromFile (expr <* eof) f</code></pre>
+
+    Here, the <code>eof</code> is a parser which parses the end of a string or file,
+    and the <code>(<*)</code> operator, which we can use since the Parsers are monads,
+    evaluates both parsers but returns only the result from the one on the left (if
+    either fail, both will). <code>ParseError</code> simply contains information about
+    what happened in the case of a parsing failure. Conveniently, it is an instance of
+    <code>Show</code>.
+
+    <pre><code></code></pre>
+
+    <pre><code></code></pre>
+
     <br>
     <br>
 
