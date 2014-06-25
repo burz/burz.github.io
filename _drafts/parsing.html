@@ -74,7 +74,8 @@ e ::= e + e | e - e | v</code></pre>
     <pre><code>data Expr =
        Add Expr Expr
      | Sub Expr Expr
-     | Num Int</code></pre>
+     | Num Integer
+     deriving Show</code></pre>
 
     Usually when you have to do something with parsing you have a whole lot of
     baggage that comes along with it. Things like whitespace, the state of the
@@ -90,16 +91,16 @@ e ::= e + e | e - e | v</code></pre>
     takes our program and returns tokens, things like "45", "-12", "+", or "-" while
     removing whitespace. First we define the configuration for our lexer
 
-    <pre><code>import Text.Parsec
-import qualified Text.Parsec.Token as Token
+    <pre><code>import Text.Parsec hiding (Empty)
+import qualified Text.Parsec. Token as Token
 import Text.Parsec.Language
 
-lexerConfig = { Token.reservedOpNames = words "+ -" }</code></pre>
+lexerConfig = emptyDef { Token.reservedOpNames = words "+ -" }</code></pre>
 
     This lexer config says that the symbols "+" and "-" are reserved operators.
     Now we create our lexer and extract some useful functions from it
 
-    <pre><code>lexer = Token.makeTokenParser emptyDef lexerConfig
+    <pre><code>lexer = Token.makeTokenParser lexerConfig
 
 reservedOp = Token.reservedOp lexer
 integer    = Token.integer lexer</code></pre>
@@ -170,7 +171,7 @@ binary name label assoc = Infix (do{ reservedOp name
     parser is
 
     <pre><code>expr :: Parser Expr
-expr = buildExpressionParser opTable expr</code></pre>
+expr = buildExpressionParser opTable value</code></pre>
 
     which says that the parser for the right and left of an expression is either a
     <code>value</code> or another expression from the <code>opTable</code>.
@@ -182,11 +183,11 @@ expr = buildExpressionParser opTable expr</code></pre>
 
     <pre><code>import Control.Applicative ((<*))
 
-parseString :: String -> Either ParseError Expr
-parseString s = parse (expr <* eof) "" s
+parseString :: Parser Expr -> String -> Either ParseError Expr
+parseString e s = parse (e <* eof) "" s
 
-parseFile :: FilePath -> IO (Either ParseError Expr)
-parseFile f = parseFromFile (expr <* eof) f</code></pre>
+parseFile :: Parser Expr -> FilePath -> IO (Either ParseError Expr)
+parseFile e f = parseFromFile (e <* eof) f</code></pre>
 
     Here, the <code>eof</code> is a parser which parses the end of a string or file,
     and the <code>(<*)</code> operator, which we can use since the Parsers are monads,
@@ -222,21 +223,24 @@ parseFile f = parseFromFile (expr <* eof) f</code></pre>
     | Appl Expr Expr
     | Let String [String] Expr Expr -- Let String String String ... = Expr In Expr
     | Semi Expr Expr -- Expr; Expr
-    | Case Expr Expr String String Expr -- Case Expr Of [] -> Expr | (String, String) -> Expr</code></pre>
+    | Case Expr Expr String String Expr -- Case Expr Of [] -> Expr | (String, String) -> Expr
+    deriving Show</code></pre>
 
-    To correspond with our grammar, we define the following lexer
+    To correspond with our grammar, we define the following  lexer
 
     <pre><code>names = words "True False Function If Then Else Let In Case Of" -- reserved names
 opNames = words "-> && || ! + - * / % = ; < <= > >= :" -- reserved operations
 
-lexerConfig = { Token.commentStart = "/*" -- adding comments is easy
-              , Token.commentEnd = "*/"
-              , Token.commentLine = "#"
-              , Token.identStart = letter -- identifiers must start with a letter
-              , Token.identLetter = alphaNum <|> char '_' <|> char '\''
-              , Token.reservedNames = names
-              , Token.reservedOpNames = opNames
-              }</code></pre>
+lexerConfig = emptyDef { Token.commentStart = "/*" -- adding comments is easy
+                       , Token.commentEnd = "*/"
+                       , Token.commentLine = "#"
+                       , Token.identStart = letter -- identifiers must start with a letter
+                       , Token.identLetter = alphaNum <|> char '_' <|> char '\''
+                       , Token.reservedNames = names
+                       , Token.reservedOpNames = opNames
+                       }
+
+lexer = Token.makeTokenParser lexerConfig</code></pre>
 
     The <code>letter</code> parser is a parser that parses any letter. The
     <code>alphaNum</code> parses any letter or number character. The <code>char</code>
@@ -320,13 +324,13 @@ opExpr = buildExpressionParser opTable term</code></pre>
 
     First we define parsers for our basic constant types
 
-    <pre><code>import Control.Applicative ( (<$>) -- This takes an argument on its right,
-                                   -- in this case the value inside the
-                                   -- monadic parser, and applies it to the function to
-                                   -- the left (if the parser does not fail)
-                           , (<$)) -- This takes an monadic parser on its right
-                                   -- and returns the value on the left (if the
-                                   -- parser does not fail)
+    <pre><code>import Control.Applicative ( (<$>)  -- This takes an argument on its right,
+                                    -- in this case the value inside the
+                                    -- monadic parser, and applies it to the function to
+                                    -- the left (if the parser does not fail)
+                           , (<$) ) -- This takes an monadic parser on its right
+                                    -- and returns the value on the left (if the
+                                    -- parser does not fail)
 
 cint :: Parser Expr
 cint = CInt <$> integer
@@ -359,7 +363,78 @@ term =  cint
     <|> list
     <|> parens expr -- parentheses surrounded expression</code></pre>
 
-    <pre><code></code></pre>
+    <h2>
+        <code>Let</code>'s, <code>Case</code>'s, <code>Function</code>'s, and
+        <code>If</code>'s
+    </h2>
+
+    Now that we have our basic building blocks defining more complicated
+    exprssions is just a matter of combining them in the right way. We define
+    our <code>Let</code> to be
+
+    <pre><code>letExpr :: Parser Expr
+letExpr = reserved "Let" *> do -- parse the reserved word Let; return the do block
+    s <- sepBy1 identifier whiteSpace
+    reservedOp "="
+    e <- expr
+    reserved "In"
+    e' <- expr
+    case s of (x:xs) -> return $ Let x xs e e' -- we must have at least one</code></pre>
+
+    The <code>sepBy1</code> parser parses one or more instances of the parser passed
+    as its first argument separated by one instance each of the parser passed as its
+    argument. We need to have at least one <code>identifier</code> to be the name of
+    the variable being defined. The rest of the <code>do</code> block just parses the
+    rest of the expression before returning the result. Next, our <code>Case</code>
+    parser is
+
+    <pre><code>caseExpr :: Parser Expr
+caseExpr = reserved "Case" *> do
+    p <- expr
+    reserved "Of" *> symbol "[]" *> reservedOp "->" -- parse an Of, a [], then a ->
+    x <- expr
+    reservedOp "|"
+    (s, t) <- parens $ do{ s' <- identifier -- return the do block within parentheses
+                         ; reservedOp ":"
+                         ; t' <- identifier
+                         ; return (s', t')
+                         }
+    reservedOp "->"
+    y <- expr
+    return $ Case p x s t y</code></pre>
+
+    Next we define a <code>Function</code> parser
+
+    <pre><code>import Control.Applicative ((<*>)) -- Adds an extra argument to (<$>)
+
+function :: Parser Expr
+function = reserved "Function" *> ((\x y -> Function x y)
+    <$> identifier <*> (reservedOp "->" *> expr)</code></pre>
+
+    which parses the reserved word <code>Function</code>, then an
+    <code>identifier</code>, a reserved operation <code>-></code>, and an expression
+    and returns the <code>Expr</code> monadically. Now we can define our
+    <code>If</code> parser to be
+
+    <pre><code>ifExpr :: Parser Expr
+ifExpr = reserved "If" *> ((\x y z -> If x y z)
+    <$> expr <*> (reserved "Then" *> expr) <*> (reserved "Else" *> expr))</code></pre>
+
+    Finally, we can define our <code>Expr</code> parser
+
+    <pre><code>expr :: Parser Expr
+expr =  function
+    <|> letExpr
+    <|> ifExpr
+    <|> caseExpr
+    <|> opExpr
+    <|> term</code></pre>
+
+    Wait... are we? Yes, that is right. This is the entire parser. Just fire up
+    our <code>parseString</code> and <code>parseFile</code> functions and test it
+    out.
+
+    <h2>Afterword</h2>
 
     <br>
     <br>
