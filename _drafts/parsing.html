@@ -43,14 +43,15 @@ e ::=   v
     used for the programming language
     <a href="https://github.com/burz/Feval">Feval</a> by utilizing the
     <a href"https://hackage.haskell.org/package/parsec">Parsec</a>
-    library for Haskell. We will find that such a daunting task as parsing is
+    library for Haskell. We will find that the daunting task of parsing is
     made relatively simple with parser combinators.
 
     <h2>Basic Background</h2>
 
     Parsing is primarily concerned with deriving meaning from strings, i.e. sequences
     of characters. In the domain of programming languages, this means that we want to
-    read in a string (usually read from a file) that contains a program. For instance
+    read in a string (usually read from a file) that contains a program and convert
+    it to something the interpreter can evaluate. For instance
     if we have the code <code>1 - 2 + 3</code> we would want to be able to convert it
     to its abstract syntax tree or AST which looks like
 
@@ -59,7 +60,7 @@ e ::=   v
     The AST tells the program how to execute the code, which it does in a post-order
     traversal, i.e. it evaluates the right and left children before the parent. The
     way that we represent the AST in Haskell is by defining a grammar for our
-    language and then an acutal type. For the expression above we could define
+    language, and then an actual type. For the expression above we could define
     the grammar for our language to be
 
     <pre><code>v ::= 1 | -1 | 2 | -2 | 3 | -3 | ...
@@ -67,9 +68,9 @@ e ::=   v
 e ::= e + e | e - e | v</code></pre>
 
     In this case our values denoted by the variable <code>v</code> can be any
-    integer, whereas our expressions denoted by the variable <code>e</code> are
-    only addition of any two expressions, subtraction of any two expressions, or
-    any value. We can represent this grammar as a type as follows
+    integer, whereas our expressions, denoted by the variable <code>e</code>, can
+    only be addition of any two expressions, subtraction of any two expressions, or
+    any value. We can represent this grammar in type form as follows
 
     <pre><code>data Expr =
        Add Expr Expr
@@ -85,7 +86,7 @@ e ::= e + e | e - e | v</code></pre>
     <a href"https://hackage.haskell.org/package/parsec">Parsec</a>
     makes all this easy.
 
-    <h2>Parse on, Captian</h2>
+    <h2>Parse on, Captain</h2>
 
     First off, to deal with whitespace all we need to do is create a lexer, which
     takes our program and returns tokens, things like "45", "-12", "+", or "-" while
@@ -98,7 +99,7 @@ import Text.Parsec.Language
 lexerConfig = emptyDef { Token.reservedOpNames = words "+ -" }</code></pre>
 
     This lexer config says that the symbols "+" and "-" are reserved operators.
-    Now we create our lexer and extract some useful functions from it
+    Then we create our lexer and extract some useful functions from it
 
     <pre><code>lexer = Token.makeTokenParser lexerConfig
 
@@ -106,7 +107,7 @@ reservedOp = Token.reservedOp lexer
 integer    = Token.integer lexer</code></pre>
 
     Now we can get down to the gritty details. The Parsec parser is a monad that
-    abstracts everything but the results of succesful parsing away from us so
+    abstracts everything but the results of successful parsing away from us so
     that we don't have to deal with it. Because of the monad structure, we are
     easily able to combine smaller parsers together to form a larger parser. In
     this way we will find that our parser resembles its original grammar.
@@ -123,15 +124,15 @@ value = do
     return $ Num n</code></pre>
 
     The <code>integer</code> parser returns an integer monadically, which we extract
-    to form a value <code>Expr</code>, namely an instance of <code>Num Int</code>. In
-    the case that the <code>integer</code> fails, i.e. cannot parse an input, the
-    value parser will fail without consuming any input.
+    to form a value <code>Expr</code>, namely an instance of
+    <code>Num Integer</code>. In the case that the <code>integer</code> fails, i.e.
+    cannot parse an input, the value parser will fail without consuming any input.
 
     <br>
     <br>
 
     (It is important to note that this would not be the case if the <code>value</code>
-    parser were made to consume something else before the integer, like
+    parser were made to consume something else before the integer, for instance
     <code>Integer</code> before an expression like <code>Integer -78</code>. In this
     case after consuming a string containing "Integer", if the <code>integer</code>
     parser were to fail, the "Integer" would still be consumed by the value parser
@@ -191,9 +192,9 @@ parseFile e f = parseFromFile (e <* eof) f</code></pre>
 
     Here, the <code>eof</code> is a parser which parses the end of a string or file,
     and the <code>(<*)</code> operator, which we can use since the Parsers are monads,
-    evaluates both parsers but returns only the result from the one on the left.
-    <code>ParseError</code> simply contains information about what happened in the case
-    of a parsing failure. Conveniently, it is an instance of <code>Show</code>.
+    which evaluates both parsers but returns only the result from the one on the left.
+    <code>ParseError</code> simply contains information about what happened in the
+    case of a parsing failure. Conveniently, it is an instance of <code>Show</code>.
 
     <h2>Data Aquisition</h2>
 
@@ -259,11 +260,11 @@ commaSep   = Token.commaSep lexer   -- parses some or no comma separated instanc
 integer    = Token.integer lexer    -- parses an integer
 whiteSpace = Token.whiteSpace lexer -- parses whitespace</code></pre>
 
-    <h2>Expressions and an Appl</h2>
+    <h2>Expressions and an <code>Appl</code></h2>
 
-    We next move on to our easiest parser, the operation expression parser. All we need
-    to do is to define a <code>prefix</code> function to complement our
-    <code>binary</code> function described earlier
+    We next move on to our easiest parser, the operation expression parser (who would
+    have thought...). All we need to do is to define a <code>prefix</code> function
+    to complement our <code>binary</code> function described earlier
 
     <pre><code>import Control.Applicative ((*>)) -- the opposite of (<*)
 
@@ -294,10 +295,10 @@ prefix name label = Prefix (reservedOp name *> return (\x -> label x))</code></p
     Note that the operation lists at the top have the highest precedence (operations in
     the same list have the same precedence). But what is this <code>appl</code> in our
     tree (haha)? This is our operation for function application, which uses spaces
-    between arguments instead of an operator like <code>(Function x -> x + 1) 3</code>.
-    We need to be careful with how we define application, becuase there is usually a
-    space between the operators and arguments in other expressions. Therefore, we
-    define <code>appl</code> as
+    between arguments instead of an operator, for example an expression like
+    <code>(Function x -> x + 1) 3</code>. We need to be careful with how we define
+    application, because there is usually a space between the operators and arguments
+    in other expressions. Therefore, we define <code>appl</code> as
 
     <pre><code>appl = Infix space AssocLeft
     where space = whiteSpace
@@ -307,10 +308,10 @@ prefix name label = Prefix (reservedOp name *> return (\x -> label x))</code></p
     The <code>appl</code> parser first consumes any whitespace, then it makes sure
     that it is not followed by an operation. We do this by taking the array of operator
     names and mapping the reserved operation parser function <code>reservedOp</code>
-    over it. We then wrap this into a choice parser which does parses at least one of
-    the parser in a list. Finally we pass this into the parser <code>notFollowedBy</code>,
-    which does not fail only if the next string (looking ahead) cannot be parsed by its
-    argument.
+    over it. We then wrap this into a choice parser which parses at least one of
+    the parsers in the list passed to it as an argument. Then we apply this to the
+    parser <code>notFollowedBy</code>, which does not fail only if the next string
+    (looking ahead) cannot be parsed by its argument.
 
     <br>
     <br>
@@ -349,11 +350,14 @@ list = toCons <$> brackets (commaSep expr)
     where toCons [] = Empty
           toCons (x:xs) = Cons x (toCons xs)</code></pre>
 
-    This parser reads in some or no <code>expr</code> parsers seperated by commas and
+    This parser reads in some or no <code>expr</code> parsers separated by commas and
     encapsulated with brackets, and applies the resulting list to the <code>toCons</code>
     function before returning it monadically.
 
-    Finally we can define the <code>term</code> parser that we used in our
+    <br>
+    <br>
+
+    At last we can define the <code>term</code> parser that we used in our
     <code>opExpr</code> parser
 
     <pre><code>term :: Parser Expr
@@ -369,7 +373,7 @@ term =  cint
     </h2>
 
     Now that we have our basic building blocks defining more complicated
-    exprssions is just a matter of combining them in the right way. We define
+    expressions is just a matter of combining them in the right way. We define
     our <code>Let</code> to be
 
     <pre><code>letExpr :: Parser Expr
@@ -382,16 +386,20 @@ letExpr = reserved "Let" *> do -- parse the reserved word Let; return the do blo
     case s of (x:xs) -> return $ Let x xs e e' -- we must have at least one</code></pre>
 
     The <code>sepBy1</code> parser parses one or more instances of the parser passed
-    as its first argument separated by one instance each of the parser passed as its
-    argument. We need to have at least one <code>identifier</code> to be the name of
-    the variable being defined. The rest of the <code>do</code> block just parses the
-    rest of the expression before returning the result. Next, our <code>Case</code>
-    parser is
+    as its first argument, separated by one instance each of the parsers passed as its
+    argument. Note that we need to have at least one <code>identifier</code> to be the
+    name of the variable being defined. The rest of the <code>do</code> block just parses
+    the rest of the expression before returning the result.
+
+    <br>
+    <br>
+
+    Our <code>Case</code> parser is
 
     <pre><code>caseExpr :: Parser Expr
 caseExpr = reserved "Case" *> do
     p <- expr
-    reserved "Of" *> symbol "[]" *> reservedOp "->" -- parse an Of, a [], then a ->
+    reserved "Of" *> symbol "[]" *> reservedOp "->" -- parse an "Of", a "[]", then a "->"
     x <- expr
     reservedOp "|"
     (s, t) <- parens $ do{ s' <- identifier -- return the do block within parentheses
@@ -403,7 +411,7 @@ caseExpr = reserved "Case" *> do
     y <- expr
     return $ Case p x s t y</code></pre>
 
-    Next we define a <code>Function</code> parser
+    Define our <code>Function</code> parser to be
 
     <pre><code>import Control.Applicative ((<*>)) -- Adds an extra argument to (<$>)
 
@@ -412,9 +420,13 @@ function = reserved "Function" *> ((\x y -> Function x y)
     <$> identifier <*> (reservedOp "->" *> expr)</code></pre>
 
     which parses the reserved word <code>Function</code>, then an
-    <code>identifier</code>, a reserved operation <code>-></code>, and an expression
-    and returns the <code>Expr</code> monadically. Now we can define our
-    <code>If</code> parser to be
+    <code>identifier</code>, a reserved operation <code>-></code>, and an expression,
+    and returns the <code>Expr</code> monadically.
+
+    <br>
+    <br>
+
+    Our <code>If</code> parser is then simply
 
     <pre><code>ifExpr :: Parser Expr
 ifExpr = reserved "If" *> ((\x y z -> If x y z)
@@ -448,9 +460,9 @@ newtype Fix f = Fx (f (Fix f))
 
 type NewExpr = Fix Expr</code></pre>
 
-    (more information on this in
+    (More information on this in
     <a href="http://burz.github.io/2014/06/15/feval.html">this</a>
-    article)
+    article.)
 
     <br>
     <br>
