@@ -436,6 +436,27 @@ expr =  function
 
     <h2>Afterword</h2>
 
+    Hopefully the preceding discussion has helped you learn how you can use Parsec.
+    The parser we created is nearly verbatim what I wrote for
+    <a href="https://github.com/burz/Feval">Feval</a>, except instead of a simple
+    type <code>Expr</code>, I use the type <code>Expr a</code> since I want the
+    type to be a functor, which I make recursive with the type <code>Fix</code>
+
+    <pre><code>data Expr a = Num Integer | ...
+
+newtype Fix f = Fx (f (Fix f))
+
+type NewExpr = Fix Expr</code></pre>
+
+    (more information on this in
+    <a href="http://burz.github.io/2014/06/15/feval.html">this</a>
+    article)
+
+    <br>
+    <br>
+
+    Happy parsing!
+
     <br>
     <br>
 
