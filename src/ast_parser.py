@@ -1,3 +1,5 @@
+# dot -T jpg ast_parser.dot > ast_parser.jpg
+
 handle = 0
 
 def createNode(label):
@@ -21,8 +23,8 @@ def simpleAST():
     string = minusNode[1] + plusNode[1] + oneNode[1]
     string = string + twoNode[1] + threeNode[1]
     string = string + createChild(minusNode[0], oneNode[0])
-    string = string + createChild(minusNode[0], plusNode[0])
-    string = string + createChild(plusNode[0], twoNode[0])
+    string = string + createChild(minusNode[0], twoNode[0])
+    string = string + createChild(plusNode[0], minusNode[0])
     string = string + createChild(plusNode[0], threeNode[0])
     return string
 
