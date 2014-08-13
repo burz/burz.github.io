@@ -1,3 +1,3 @@
 My personal website
 
-[burz.github.io](http://burz.github.io)
+[burz.io](http://www.burz.io)
